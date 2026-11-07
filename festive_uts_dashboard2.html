@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Festive UTS Crowd Peaks</title>
+<!-- SheetJS reads .xlsx / .xls / .csv in the browser. Nothing is uploaded to any server. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --fg: #1a1a1a; --muted: #555555; --line: #d9d9d9; --panel: #ffffff; --bg: #ffffff;
+    --red: #c62828; --bar: #b9c2cc; --grid: #ececec; --axis: #bdbdbd; --accent: #1f4e8c;
+  }
+  * { box-sizing: border-box; }
+  html, body { background: var(--bg); color: var(--fg); margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 14px; }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 24px 20px 48px; display: flex; flex-direction: column; gap: 20px; }
+  h1 { font-size: 24px; margin: 0 0 6px; font-weight: 700; }
+  .lede { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.5; max-width: 80ch; }
+  .lede b { color: var(--fg); }
+
+  .drop { border: 2px dashed var(--line); border-radius: 8px; padding: 22px; text-align: center; background: #fafafa; cursor: pointer; }
+  .drop.over { border-color: var(--accent); background: #f2f6fc; }
+  .drop strong { display: block; font-size: 15px; margin-bottom: 4px; }
+  .drop span { color: var(--muted); font-size: 13px; }
+  .drop input { display: none; }
+  .status { font-size: 13px; color: var(--muted); }
+  .uploadbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
+  .uploadbar button { font: inherit; font-size: 13px; color: var(--fg); background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+  .uploadbar button:hover { background: #f5f5f5; }
+  .uploadbar .arrow { display: inline-block; transition: transform .15s; font-size: 11px; }
+  .uploadbar button[aria-expanded="true"] .arrow { transform: rotate(180deg); }
+  .grid .c.nh { background: #eeeeee; color: #555555; }
+  .legend .nh { display: inline-block; width: 0.9rem; height: 0.9rem; border-radius: 3px; vertical-align: middle; background: #eeeeee; }
+  .status.err { color: var(--red); font-weight: 700; }
+
+  .filters { display: flex; flex-wrap: wrap; gap: 16px; align-items: end; }
+  .filters label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+  .filters select { font: inherit; font-size: 14px; padding: 6px 8px; min-width: 13rem; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--fg); }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 12px; }
+  .tile { border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; min-width: 0; background: var(--panel); }
+  .tile .lbl { font-size: 12px; color: var(--muted); }
+  .tile .val { font-size: 26px; font-weight: 700; line-height: 1.15; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+  .tile .sub { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  .card { border: 1px solid var(--line); border-radius: 8px; padding: 18px; display: flex; flex-direction: column; gap: 10px; min-width: 0; background: var(--panel); }
+  .card h2 { margin: 0; font-size: 17px; font-weight: 700; }
+  .note { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.5; }
+  .cardhead { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; font-size: 12px; color: var(--muted); }
+  .legend .sw { display: inline-block; width: 2.6rem; height: 0.7rem; border-radius: 2px; vertical-align: middle; }
+  .legend .ring { display: inline-block; width: 0.9rem; height: 0.9rem; border-radius: 3px; box-shadow: inset 0 0 0 2px var(--fg); vertical-align: middle; }
+  .legend .na { display: inline-block; width: 0.9rem; height: 0.9rem; border-radius: 3px; vertical-align: middle; background: repeating-linear-gradient(135deg, var(--line) 0 2px, transparent 2px 5px); }
+  .cols { display: grid; grid-template-columns: 1fr; gap: 12px; }
+  .scroll { overflow-x: auto; position: relative; }
+  .hm { position: relative; }
+
+  .grid { display: grid; gap: 2px; font-size: 12px; font-variant-numeric: tabular-nums; }
+  .grid .h { font-weight: 700; color: var(--fg); text-align: center; padding: 2px 0 4px; white-space: nowrap; }
+  .grid .rg { grid-column: 1 / -1; font-weight: 700; padding: 8px 0 2px; }
+  .grid .st { padding-right: 8px; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .grid .c { height: 1.9rem; border-radius: 3px; display: flex; align-items: center; justify-content: center; position: relative; }
+  .grid .c.pk { box-shadow: inset 0 0 0 2px var(--fg); font-weight: 700; }
+  .grid .c.pk::after { content: ""; position: absolute; top: 2px; right: 2px; border-left: 5px solid transparent; border-top: 5px solid var(--fg); }
+  .grid .c.na { background: repeating-linear-gradient(135deg, var(--line) 0 2px, transparent 2px 5px); color: var(--muted); }
+  .grid .tot { display: flex; align-items: center; justify-content: flex-end; padding-left: 8px; color: var(--muted); white-space: nowrap; }
+
+  .tip { position: absolute; z-index: 5; background: #fff; border: 1px solid #ccc; border-radius: 6px; box-shadow: 0 4px 14px rgba(0,0,0,.12); padding: 6px 9px; font-size: 12px; pointer-events: none; white-space: nowrap; }
+  .tip .t2 { color: var(--muted); }
+  .curve { position: relative; }
+  .curve svg text { font-family: Arial, Helvetica, sans-serif; }
+
+  details { font-size: 12px; color: var(--muted); line-height: 1.6; }
+  details summary { cursor: pointer; color: var(--fg); font-weight: 700; }
+  details ul { margin: 6px 0 0; padding-left: 1.2rem; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Festive UTS crowd peaks</h1>
+    <p class="lede" id="lede">Upload the outward UTS traffic sheet (2-hour windows by station) to see where and when the crowd peaks.</p>
+  </header>
+
+  <div class="uploadbar" id="uploadbar" hidden>
+    <button type="button" id="toggle-upload" aria-expanded="false" aria-controls="drop"><span class="arrow">&#9660;</span> Upload another file</button>
+    <span id="loaded-name"></span>
+  </div>
+
+  <label class="drop" id="drop" for="file">
+    <input type="file" id="file" accept=".xlsx,.xls,.csv">
+    <strong>Choose a file or drop it here</strong>
+    <span>Excel (.xlsx, .xls) or CSV, in the same layout as the Diwali / Chhath UTS sheet. The file is read in your browser and not sent anywhere.</span>
+  </label>
+  <div class="status" id="status"></div>
+
+  <div id="dash" hidden>
+    <div style="display:flex;flex-direction:column;gap:20px">
+      <div class="filters">
+        <label for="f-date">Day <select id="f-date"></select></label>
+        <label for="f-scope">Stations <select id="f-scope"></select></label>
+      </div>
+
+      <div class="tiles">
+        <div class="tile"><span class="lbl">Unreserved passengers</span><span class="val" id="k-total">—</span><span class="sub"><span id="k-stations">—</span> stations</span></div>
+        <div class="tile"><span class="lbl">Busiest 2-hour window</span><span class="val" id="k-slot">—</span><span class="sub"><span id="k-slotval">—</span> passengers</span></div>
+        <div class="tile"><span class="lbl">Stations peaking in that window</span><span class="val" id="k-peakcount">—</span><span class="sub">of <span id="k-stations2">—</span> in view</span></div>
+        <div class="tile"><span class="lbl">Busiest station</span><span class="val" id="k-station">—</span><span class="sub"><span id="k-stationval">—</span> passengers</span></div>
+      </div>
+
+      <section class="card">
+        <div class="cardhead">
+          <div>
+            <h2>Crowd by 2-hour window</h2>
+            <p class="note">Colour compares each window with that station's average for the same window over the previous 30 days: green below 50% of the average, yellow 50–80%, red 80–300% (deeper shades as it rises; above 300% stays deepest red). <span id="hist-note"></span> The outlined cell is the station's peak window for the day.</p>
+          </div>
+          <div class="legend">
+            <span><span class="sw" style="background:linear-gradient(90deg,#e3f4dd,#4caf50)"></span> 0–50% of 30-day average</span>
+            <span><span class="sw" style="background:linear-gradient(90deg,#fff6c2,#f5c400)"></span> 50–80%</span>
+            <span><span class="sw" style="background:linear-gradient(90deg,#f9c9bd,#b71c1c)"></span> 80–300%</span>
+            <span><span class="ring"></span> Peak window</span>
+            <span><span class="nh"></span> No earlier days</span>
+            <span><span class="na"></span> Not reported</span>
+          </div>
+        </div>
+        <div class="scroll"><div class="hm" id="heat"></div></div>
+      </section>
+
+      <div class="cols">
+        <section class="card">
+          <h2>Crowd curve</h2>
+          <p class="note">Passengers per 2-hour window across the stations in view. The busiest window is highlighted.</p>
+          <div class="curve" id="curve"></div>
+        </section>
+        <section class="card">
+          <h2>Peak window by day</h2>
+          <p class="note">Each cell shows the hour the station's busiest window starts (16 means 16:00–18:00). Colour compares each day's peak with the station's highest peak of the period, on the same green, yellow and red bands.</p>
+          <div class="scroll"><div class="hm" id="peaks"></div></div>
+        </section>
+      </div>
+
+      <details id="notes">
+        <summary>About the data</summary>
+        <ul id="notes-list"></ul>
+      </details>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ===================== Settings you can edit ===================== */
+
+// Station -> city/area group. Matched on the station code in brackets, e.g. "New Delhi (NDLS)".
+// Stations not listed here are grouped under their own name.
+const STATION_GROUPS = {
+  NDLS: 'Delhi Area', ANVT: 'Delhi Area', ANVR: 'Delhi Area', DLI: 'Delhi Area', NZM: 'Delhi Area',
+  MMCT: 'Mumbai', LTT: 'Mumbai', CSMT: 'Mumbai', CSTM: 'Mumbai', DR: 'Mumbai', DDR: 'Mumbai',
+  SBC: 'Bengaluru', SMVB: 'Bengaluru', YPR: 'Bengaluru',
+  SC: 'Hyderabad', HYB: 'Hyderabad', KCG: 'Hyderabad',
+  ST: 'Surat', UDN: 'Surat',
+  PUNE: 'Pune', ADI: 'Ahmedabad', MAS: 'Chennai', MS: 'Chennai',
+  SDAH: 'Kolkata', HWH: 'Kolkata', HWHS: 'Kolkata',
+  BSB: 'Varanasi', BSBS: 'Varanasi', GKP: 'Gorakhpur', JP: 'Jaipur', NGP: 'Nagpur',
+  BZA: 'Vijayawada', VSKP: 'Visakhapatnam', CBE: 'Coimbatore', CBF: 'Coimbatore',
+  TUP: 'Tiruppur', ERS: 'Ernakulam', ERN: 'Ernakulam'
+};
+// The groups shown under "Key stations", in display order.
+const KEY_GROUPS = ['Delhi Area', 'Mumbai', 'Bengaluru', 'Hyderabad', 'Surat'];
+// Colour bands: share of the station's peak -> [from, to, light shade, deep shade].
+// Crowd by 2-hour window: window's passengers as a share of the station's average for the same window
+// over the previous HISTORY_DAYS days -> [from, to, light shade, deep shade]. Above the last band uses the deepest shade.
+const HISTORY_DAYS = 30;
+const HIST_BANDS = [[0, 0.5, '#e3f4dd', '#4caf50'], [0.5, 0.8, '#fff6c2', '#f5c400'], [0.8, 3.0, '#f9c9bd', '#b71c1c']];
+// Peak window by day: day's peak as a share of the station's highest peak in the file.
+const BANDS = [[0, 0.3, '#e3f4dd', '#4caf50'], [0.3, 0.6, '#fff6c2', '#f5c400'], [0.6, 1.0001, '#f9c9bd', '#b71c1c']];
+
+/* ===================== Helpers ===================== */
+const SLOTS = ['00-02','02-04','04-06','06-08','08-10','10-12','12-14','14-16','16-18','18-20','20-22','22-24'];
+const $ = (id) => document.getElementById(id);
+const fmtInt = (v) => Math.round(v).toLocaleString('en-IN');
+const fmtK = (v) => v >= 1000 ? (v / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : String(v);
+const fmtBig = (v) => v >= 100000 ? (v / 100000).toFixed(2) + ' lakh' : fmtInt(v);
+const slotLabel = (s) => s.slice(0, 2) + ':00–' + s.slice(3) + ':00';
+const slotShort = (s) => s.slice(0, 2) + '–' + s.slice(3);
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const dateObj = (iso) => { const [y, m, d] = iso.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d)); };
+const dateShort = (iso) => { const d = dateObj(iso); return d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()]; };
+const dateLong = (iso) => { const d = dateObj(iso); return DAYS[d.getUTCDay()] + ' ' + dateShort(iso); };
+
+const hexToRgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+const mix = (a, b, t) => { const A = hexToRgb(a), B = hexToRgb(b); return 'rgb(' + A.map((x, i) => Math.round(x + (B[i] - x) * t)).join(',') + ')'; };
+function bandColor(share, bands = BANDS) {
+  if (share >= bands[bands.length - 1][1]) return bands[bands.length - 1][3];
+  const b = bands.find(([lo, hi]) => share >= lo && share < hi) || bands[bands.length - 1];
+  const t = Math.max(0, Math.min(1, (share - b[0]) / (Math.min(b[1], 1) - b[0])));
+  return mix(b[2], b[3], t);
+}
+function textOn(rgb) {
+  const [r, g, b] = rgb.match(/\d+/g).map(Number);
+  return (0.299 * r + 0.587 * g + 0.114 * b) < 140 ? '#ffffff' : '#1a1a1a';
+}
+function groupOf(name) {
+  const m = name.match(/\(([^)]*)\)/);
+  const codes = m ? m[1].split(/[,&\s]+/).filter(Boolean) : [name.trim().toUpperCase()];
+  for (const c of codes) if (STATION_GROUPS[c.toUpperCase()]) return STATION_GROUPS[c.toUpperCase()];
+  return name.replace(/\s*\(.*\)\s*/, '').trim().replace(/\b\w+/g, (w) => w[0] + w.slice(1).toLowerCase());
+}
+function toISODate(v) {
+  if (v instanceof Date && !isNaN(v)) {
+    const d = new Date(v.getTime() + 12 * 3600 * 1000); // guard against time-zone rounding
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  if (typeof v === 'number' && v > 30000 && v < 80000) { // Excel serial date
+    const d = XLSX.SSF.parse_date_code(v);
+    return d.y + '-' + String(d.m).padStart(2, '0') + '-' + String(d.d).padStart(2, '0');
+  }
+  if (typeof v === 'string') {
+    let m = v.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return m[0];
+    m = v.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
+    if (m) { const y = m[3].length === 2 ? '20' + m[3] : m[3]; return y + '-' + m[2].padStart(2, '0') + '-' + m[1].padStart(2, '0'); }
+  }
+  return null;
+}
+const isNum = (v) => typeof v === 'number' && isFinite(v);
+const isSlotText = (v) => typeof v === 'string' && /\d{1,2}:\d{2}\s*to\s*\d{1,2}:\d{2}/i.test(v);
+
+/* ===================== Reading the sheet ===================== */
+// Layout expected: col A date (on the first station row of each day), col B serial no., col C station name,
+// cols D–O the twelve 2-hour windows, col P total (ignored: windows are summed instead).
+function parseSheet(rows) {
+  const data = [];               // {date, station, region, v:[12], status:[12]}
+  const notes = [];
+  let date = null, shift = null; // shift: while a header row has been typed over a station row in this day
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i] || [];
+    const d = toISODate(r[0]);
+    if (d) { date = d; shift = null; }
+    const name = typeof r[2] === 'string' ? r[2].trim() : '';
+    const cells = r.slice(3, 15);
+    const label = typeof r[1] === 'string' ? r[1].trim().toUpperCase() : '';
+    if (r[0] === 'Date' || (typeof r[0] === 'string' && r[0].trim().toLowerCase() === 'date')) { shift = null; continue; }
+    if (!date) continue;
+
+    // Header text typed over a station row: that station's figures sit one row lower, and so on down the day.
+    if (name && cells.some(isSlotText)) { shift = {pending: name, date}; notes.push(`${dateLong(date)}: the column headings were typed over the ${name} row, so each station's figures sat one row low. They have been realigned.`); continue; }
+
+    const numeric = cells.filter(isNum).length >= 6 && cells.every((v) => v == null || v === '' || isNum(v));
+    if (!numeric) continue;
+    const v = cells.map((x) => (isNum(x) ? x : 0));
+
+    if (shift) {
+      // Figures on this row belong to the station named on the row above.
+      data.push({date, station: shift.pending, v});
+      if (label === 'TOTAL' || !name) { shift = null; continue; }
+      shift.pending = name;
+      continue;
+    }
+    if (!name || label === 'TOTAL') continue;
+    if (isNum(r[15]) && Math.abs(r[15] - v.reduce((a, b) => a + b, 0)) > 1) (notes._totalMismatch ??= new Set()).add(date);
+    data.push({date, station: name, v});
+  }
+  if (notes._totalMismatch) notes.push(`${[...notes._totalMismatch].map(dateLong).join(', ')}: the sheet's Total column does not match the sum of the 2-hour windows. The dashboard uses the sum of the windows.`);
+
+  // De-duplicate (same station and date twice: keep the first) and attach groups.
+  const seen = new Set();
+  const clean = [];
+  for (const d of data) {
+    const k = d.date + '|' + d.station;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    clean.push({...d, region: groupOf(d.station), status: SLOTS.map(() => 'ok')});
+  }
+
+  // Windows not reported: a window that is zero at every station that day. A window just before
+  // an unreported stretch is marked partial if it is far below the window before it.
+  const dates = [...new Set(clean.map((d) => d.date))].sort();
+  for (const dt of dates) {
+    const day = clean.filter((d) => d.date === dt);
+    const tot = SLOTS.map((_, j) => day.reduce((a, d) => a + d.v[j], 0));
+    const missing = tot.map((t) => t === 0);
+    SLOTS.forEach((_, j) => {
+      if (missing[j]) day.forEach((d) => (d.status[j] = 'missing'));
+      else if (j < 11 && missing[j + 1] && j > 0 && tot[j] < 0.25 * tot[j - 1]) day.forEach((d) => (d.status[j] = 'partial'));
+    });
+    const miss = SLOTS.filter((_, j) => missing[j]);
+    const part = SLOTS.filter((_, j) => day[0] && day[0].status[j] === 'partial');
+    if (miss.length) notes.push(`${dateLong(dt)}: no figures for ${miss.map(slotLabel).join(', ')}.` + (part.length ? ` ${part.map(slotLabel).join(', ')} looks partial.` : ''));
+  }
+  const counts = {};
+  clean.forEach((d) => (counts[d.station] = (counts[d.station] || 0) + 1));
+  const few = Object.entries(counts).filter(([, n]) => n < dates.length);
+  if (few.length && dates.length > 1) notes.push(`Stations not reported on every day: ${few.map(([s, n]) => `${s} (${n} of ${dates.length} days)`).join('; ')}.`);
+  delete notes._totalMismatch;
+  return {rows: clean, dates, notes};
+}
+
+/* ===================== Working out the figures ===================== */
+let DATA = null;
+const state = {date: null, scope: 'key'};
+const inScope = (region) => state.scope === 'all' || (state.scope === 'key' ? KEY_GROUPS.includes(region) : region === state.scope);
+
+function stationDays(date) {
+  // One record per station for the chosen day ('all' adds every day up).
+  const map = new Map();
+  for (const d of DATA.rows) {
+    if (date !== 'all' && d.date !== date) continue;
+    if (!inScope(d.region)) continue;
+    let o = map.get(d.station);
+    if (!o) { o = {station: d.station, region: d.region, v: SLOTS.map(() => 0), status: SLOTS.map(() => 'ok')}; map.set(d.station, o); }
+    d.v.forEach((x, j) => (o.v[j] += x));
+    if (date !== 'all') o.status = d.status.slice();
+  }
+  for (const o of map.values()) { o.max = Math.max(...o.v); o.total = o.v.reduce((a, b) => a + b, 0); }
+  return [...map.values()];
+}
+// Average passengers for a station's window over the HISTORY_DAYS days before `date` (reported windows only).
+let HIST = null;
+function buildHistory() {
+  HIST = new Map();
+  for (const d of DATA.rows) { if (!HIST.has(d.station)) HIST.set(d.station, []); HIST.get(d.station).push(d); }
+}
+function historyFor(station, date, j) {
+  const end = dateObj(date).getTime();
+  const start = end - HISTORY_DAYS * 86400000;
+  let sum = 0, n = 0;
+  for (const d of HIST.get(station) || []) {
+    const t = dateObj(d.date).getTime();
+    if (t >= start && t < end && d.status[j] === 'ok') { sum += d.v[j]; n++; }
+  }
+  return n ? {avg: sum / n, days: n} : null;
+}
+const regionOrder = (regions) => [...KEY_GROUPS.filter((g) => regions.includes(g)), ...regions.filter((g) => !KEY_GROUPS.includes(g)).sort()];
+
+/* ===================== Drawing ===================== */
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+function tipFor(host) { let t = host.querySelector(':scope > .tip'); if (!t) { t = el('div', 'tip'); t.hidden = true; host.appendChild(t); } return t; }
+function placeTip(host, tip, target, lines) {
+  tip.replaceChildren(el('div', 't2', lines[0]), el('div', '', lines[1]));
+  tip.hidden = false;
+  const hb = host.getBoundingClientRect(), tb = target.getBoundingClientRect();
+  let x = tb.left - hb.left + tb.width / 2 - tip.offsetWidth / 2;
+  x = Math.max(0, Math.min(x, host.scrollWidth - tip.offsetWidth));
+  let y = tb.top - hb.top - tip.offsetHeight - 6;
+  if (y < 0) y = tb.bottom - hb.top + 6;
+  tip.style.left = x + 'px'; tip.style.top = y + 'px';
+}
+
+function drawAll() {
+  const st = stationDays(state.date);
+  // Headline figures
+  const slotTot = SLOTS.map((_, j) => st.reduce((a, s) => a + s.v[j], 0));
+  const total = slotTot.reduce((a, b) => a + b, 0);
+  const pj = slotTot.indexOf(Math.max(...slotTot));
+  const peakCount = st.filter((s) => s.max > 0 && s.v[pj] === s.max).length;
+  const busiest = st.slice().sort((a, b) => b.total - a.total)[0];
+  $('k-total').textContent = fmtBig(total);
+  $('k-stations').textContent = $('k-stations2').textContent = st.length;
+  $('k-slot').textContent = st.length ? slotLabel(SLOTS[pj]) : '—';
+  $('k-slotval').textContent = st.length ? fmtInt(slotTot[pj]) : '—';
+  $('k-peakcount').textContent = st.length ? peakCount : '—';
+  $('k-station').textContent = busiest ? busiest.station : '—';
+  $('k-stationval').textContent = busiest ? fmtInt(busiest.total) : '—';
+  const when = state.date === 'all' ? `Over ${dateShort(DATA.dates[0])} to ${dateShort(DATA.dates[DATA.dates.length - 1])}` : 'On ' + dateLong(state.date);
+  const scope = state.scope === 'all' ? 'all stations' : state.scope === 'key' ? 'the key stations' : state.scope + ' stations';
+  $('lede').innerHTML = '';
+  $('lede').append(el('b', '', when), ', ', el('b', '', scope), ' issued ', el('b', '', fmtInt(total)), ' unreserved (UTS) journeys. The busiest 2-hour window was ', el('b', '', st.length ? slotLabel(SLOTS[pj]) : '—'), ', with ', el('b', '', st.length ? fmtInt(slotTot[pj]) : '—'), ' passengers.');
+
+  const prior = state.date === 'all' ? 0 : DATA.dates.filter((d) => d < state.date && dateObj(state.date) - dateObj(d) <= HISTORY_DAYS * 86400000).length;
+  $('hist-note').textContent = state.date === 'all'
+    ? 'Colours need a single day: choose one in Day above.'
+    : prior === 0 ? 'The file has no days before ' + dateLong(state.date) + ', so this day has nothing to compare with (grey).'
+    : prior < HISTORY_DAYS ? `The file has only ${prior} earlier day${prior > 1 ? 's' : ''} in that 30-day span, so the average uses ${prior > 1 ? 'those' : 'that day'}.` : '';
+  drawHeat(st);
+  drawCurve(slotTot, pj, st);
+  drawPeaks();
+}
+
+function drawHeat(st) {
+  const host = $('heat');
+  host.replaceChildren();
+  if (!st.length) { host.textContent = 'No stations in this view.'; return; }
+  const grid = el('div', 'grid');
+  grid.style.gridTemplateColumns = 'minmax(14rem,1.8fr) repeat(12,minmax(2.6rem,1fr)) minmax(4.5rem,auto)';
+  grid.style.minWidth = '48rem';
+  grid.append(el('div', 'h', ''), ...SLOTS.map((s) => el('div', 'h', slotShort(s))), el('div', 'h', 'Day total'));
+  const regions = regionOrder([...new Set(st.map((s) => s.region))]);
+  for (const g of regions) {
+    grid.append(el('div', 'rg', g));
+    for (const s of st.filter((x) => x.region === g).sort((a, b) => b.total - a.total)) {
+      const n = el('div', 'st', s.station); n.title = s.station; grid.append(n);
+      SLOTS.forEach((slot, j) => {
+        const c = el('div', 'c');
+        const v = s.v[j];
+        const head = s.station + ' · ' + slotLabel(slot);
+        if (s.status[j] === 'missing') { c.classList.add('na'); c.textContent = '–'; c.dataset.tip = JSON.stringify([head, 'Not reported']); }
+        else {
+          const h = state.date === 'all' ? null : historyFor(s.station, state.date, j);
+          let line = fmtInt(v) + ' passengers' + (s.max > 0 && v === s.max ? ' · peak window' : '') + (s.status[j] === 'partial' ? ' · partial' : '');
+          if (h && h.avg > 0) {
+            const ratio = v / h.avg;
+            const bg = bandColor(ratio, HIST_BANDS);
+            c.style.background = bg; c.style.color = textOn(bg);
+            line += ` · ${Math.round(ratio * 100)}% of ${h.days}-day avg (${fmtInt(h.avg)})`;
+          } else {
+            c.classList.add('nh');
+            line += state.date === 'all' ? ' (pick a single day to compare with the average)' : ' · no earlier days to compare';
+          }
+          c.textContent = fmtK(v);
+          if (s.max > 0 && v === s.max) c.classList.add('pk');
+          c.dataset.tip = JSON.stringify([head, line]);
+        }
+        grid.append(c);
+      });
+      grid.append(el('div', 'tot', fmtInt(s.total)));
+    }
+  }
+  host.append(grid);
+  hookTips(host, grid);
+}
+
+function drawPeaks() {
+  const host = $('peaks');
+  host.replaceChildren();
+  const dates = DATA.dates;
+  const recs = DATA.rows.filter((d) => inScope(d.region)).map((d) => {
+    const max = Math.max(...d.v); const j = d.v.indexOf(max);
+    return {station: d.station, region: d.region, date: d.date, slot: SLOTS[j], v: max};
+  });
+  if (!recs.length) { host.textContent = 'No stations in this view.'; return; }
+  const grid = el('div', 'grid');
+  grid.style.gridTemplateColumns = `minmax(14rem,1.8fr) repeat(${dates.length},minmax(3.4rem,1fr))`;
+  grid.style.minWidth = (14 + dates.length * 3.6) + 'rem';
+  grid.append(el('div', 'h', ''), ...dates.map((d) => el('div', 'h', dateShort(d))));
+  const regions = regionOrder([...new Set(recs.map((r) => r.region))]);
+  for (const g of regions) {
+    grid.append(el('div', 'rg', g));
+    const byStation = new Map();
+    recs.filter((r) => r.region === g).forEach((r) => { if (!byStation.has(r.station)) byStation.set(r.station, []); byStation.get(r.station).push(r); });
+    const order = [...byStation.entries()].sort((a, b) => b[1].reduce((x, r) => x + r.v, 0) - a[1].reduce((x, r) => x + r.v, 0));
+    for (const [name, list] of order) {
+      const n = el('div', 'st', name); n.title = name; grid.append(n);
+      const max = Math.max(...list.map((r) => r.v)) || 1;
+      for (const d of dates) {
+        const r = list.find((x) => x.date === d);
+        const c = el('div', 'c');
+        if (!r || r.v === 0) { c.classList.add('na'); c.textContent = '–'; c.dataset.tip = JSON.stringify([name + ' · ' + dateLong(d), 'No data']); }
+        else {
+          const bg = bandColor(r.v / max);
+          c.style.background = bg; c.style.color = textOn(bg); c.textContent = r.slot.slice(0, 2);
+          c.dataset.tip = JSON.stringify([name + ' · ' + dateLong(d), 'Peak ' + slotLabel(r.slot) + ' · ' + fmtInt(r.v) + ' passengers']);
+        }
+        grid.append(c);
+      }
+    }
+  }
+  host.append(grid);
+  hookTips(host, grid);
+}
+
+function hookTips(host, grid) {
+  const tip = tipFor(host);
+  grid.addEventListener('pointerover', (ev) => {
+    const c = ev.target.closest('.c');
+    if (!c) { tip.hidden = true; return; }
+    placeTip(host, tip, c, JSON.parse(c.dataset.tip));
+  });
+  grid.addEventListener('pointerleave', () => (tip.hidden = true));
+}
+
+function drawCurve(slotTot, pj, st) {
+  const host = $('curve');
+  host.replaceChildren();
+  if (!st.length) return;
+  const reported = SLOTS.map((_, j) => st.every((s) => s.status[j] === 'ok'));
+  const W = Math.max(300, host.clientWidth || 500), H = 260;
+  const max = Math.max(...slotTot) || 1;
+  const step = Math.pow(10, Math.floor(Math.log10(max))) * (max / Math.pow(10, Math.floor(Math.log10(max))) > 5 ? 2 : 1);
+  const top = Math.ceil(max / step) * step;
+  const ticks = []; for (let t = 0; t <= top; t += step) ticks.push(t);
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('width', '100%'); svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', 'Passengers per 2-hour window');
+  host.append(svg);
+  const add = (tag, attrs, text) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; svg.append(e); return e; };
+  const probe = add('text', {'font-size': 11}, fmtK(top)); const ml = Math.ceil(probe.getComputedTextLength()) + 10; probe.remove();
+  const m = {l: ml, r: 8, t: 22, b: 28};
+  const bw = (W - m.l - m.r) / 12, y = (v) => H - m.b - (v / top) * (H - m.t - m.b);
+  ticks.forEach((t) => { add('line', {x1: m.l, x2: W - m.r, y1: y(t), y2: y(t), stroke: '#ececec'}); add('text', {x: m.l - 6, y: y(t) + 4, 'text-anchor': 'end', 'font-size': 11, fill: '#555'}, fmtK(t)); });
+  const tip = tipFor(host);
+  slotTot.forEach((v, j) => {
+    const x = m.l + j * bw + bw * 0.14, w = bw * 0.72;
+    const r = add('rect', {x, y: y(v), width: w, height: Math.max(0, H - m.b - y(v)), rx: 3, fill: j === pj ? '#c62828' : '#b9c2cc', opacity: reported[j] ? 1 : 0.45});
+    r.addEventListener('pointerenter', () => placeTip(host, tip, r, [slotLabel(SLOTS[j]), fmtInt(v) + ' passengers' + (reported[j] ? '' : ' · incomplete')]));
+    r.addEventListener('pointerleave', () => (tip.hidden = true));
+    if (bw >= 26 || j % 2 === 0) add('text', {x: x + w / 2, y: H - m.b + 16, 'text-anchor': 'middle', 'font-size': 11, fill: '#555'}, SLOTS[j].slice(0, 2));
+  });
+  add('line', {x1: m.l, x2: W - m.r, y1: H - m.b, y2: H - m.b, stroke: '#bdbdbd'});
+  add('text', {x: m.l + pj * bw + bw / 2, y: y(slotTot[pj]) - 6, 'text-anchor': 'middle', 'font-size': 11, 'font-weight': 700, fill: '#1a1a1a'}, fmtK(slotTot[pj]));
+}
+
+/* ===================== Filters and upload ===================== */
+function buildFilters() {
+  const ds = $('f-date');
+  ds.replaceChildren(new Option(`All ${DATA.dates.length} days`, 'all'), ...DATA.dates.map((d) => new Option(dateLong(d), d)));
+  // Default: the latest day with every window reported, else the latest day.
+  const complete = DATA.dates.filter((d) => DATA.rows.filter((r) => r.date === d).every((r) => r.status.every((s) => s === 'ok')));
+  state.date = complete.length ? complete[complete.length - 1] : DATA.dates[DATA.dates.length - 1];
+  ds.value = state.date;
+  const regions = regionOrder([...new Set(DATA.rows.map((r) => r.region))]);
+  const sc = $('f-scope');
+  sc.replaceChildren(new Option('Key stations', 'key'), new Option('All stations', 'all'), ...regions.map((g) => new Option(g, g)));
+  state.scope = DATA.rows.some((r) => KEY_GROUPS.includes(r.region)) ? 'key' : 'all';
+  sc.value = state.scope;
+}
+$('f-date').addEventListener('change', (e) => { state.date = e.target.value; drawAll(); });
+$('f-scope').addEventListener('change', (e) => { state.scope = e.target.value; drawAll(); });
+let resizeTimer; window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => DATA && drawAll(), 150); });
+
+function showUpload(open) {
+  $('drop').hidden = !open;
+  $('toggle-upload').setAttribute('aria-expanded', String(open));
+}
+$('toggle-upload').addEventListener('click', () => showUpload($('drop').hidden));
+function setStatus(msg, err) { $('status').textContent = msg; $('status').className = 'status' + (err ? ' err' : ''); }
+
+async function loadFile(file) {
+  if (!file) return;
+  setStatus('Reading ' + file.name + '…');
+  try {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, {type: 'array', cellDates: true});
+    // Use the first sheet that yields station rows.
+    let parsed = null, sheetName = null;
+    for (const name of wb.SheetNames) {
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], {header: 1, raw: true, defval: null});
+      const p = parseSheet(rows);
+      if (p.rows.length) { parsed = p; sheetName = name; break; }
+    }
+    if (!parsed) throw new Error('No station rows found. Expected the date in column A, station names in column C and twelve 2-hour windows in columns D to O.');
+    DATA = parsed;
+    buildHistory();
+    buildFilters();
+    $('notes-list').replaceChildren(
+      el('li', '', `File: ${file.name}, sheet "${sheetName}". ${DATA.dates.length} days (${dateShort(DATA.dates[0])} to ${dateShort(DATA.dates[DATA.dates.length - 1])}), ${new Set(DATA.rows.map((r) => r.station)).size} stations.`),
+      el('li', '', 'Key stations: ' + KEY_GROUPS.join(', ') + '. Groups are set by station code in STATION_GROUPS at the top of the script.'),
+      ...DATA.notes.map((n) => el('li', '', n)),
+      el('li', '', `Crowd by 2-hour window: each window is compared with the station's average for the same window over the previous ${HISTORY_DAYS} days in the file, using only fully reported windows. Upload a file that covers at least ${HISTORY_DAYS} days before the day you want to review for a full 30-day average.`),
+      el('li', '', '"All days" adds up every day, including any day that is not complete.')
+    );
+    $('dash').hidden = false;
+    drawAll();
+    $('loaded-name').textContent = 'Showing ' + file.name;
+    $('uploadbar').hidden = false;
+    showUpload(false);
+    setStatus(DATA.notes.length ? 'Some fixes were applied to the sheet; see "About the data" at the bottom.' : '');
+    $('file').value = '';
+  } catch (e) {
+    console.error(e);
+    setStatus('Could not read this file. ' + e.message, true);
+  }
+}
+$('file').addEventListener('change', (e) => loadFile(e.target.files[0]));
+const drop = $('drop');
+['dragenter', 'dragover'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', (e) => loadFile(e.dataTransfer.files[0]));
+</script>
+</body>
+</html>
