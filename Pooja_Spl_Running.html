@@ -246,6 +246,7 @@ function parseICMS(wb) {
       std: std ? isoDT(std) : null, atd: atd ? isoDT(atd) : null,
       dst: String(g(r, 'C12')).trim(), dstZone: g(r, 'C14') || '', sta: sta ? isoDT(sta) : null,
       pos: g(r, 'C18') ? String(g(r, 'C18')).trim() : null, event: g(r, 'C19'), posTime: g(r, 'C21'),
+      posDiv: g(r, 'C17') ? String(g(r, 'C17')).trim() : '', posZone: g(r, 'C16') ? String(g(r, 'C16')).trim() : '',
       delay: running, totalDelay: total, resch,
       exc: (g(r, 'C30') || '').toString().trim(), shortTerm: g(r, 'C35') || null
     });
@@ -328,8 +329,9 @@ function showTip(ev, html) {
 }
 const hideTip = () => tip.attr('hidden', true);
 const tnos = (list) => { const c = d3.rollup(list, (v) => v.length, (t) => t.no); return list.map((t) => c.get(t.no) > 1 ? t.no + ' (' + dlabel(t.start) + ')' : t.no).join(', '); };
+const divText = (t) => t.posDiv ? t.posDiv + ' Division' + (t.posZone ? ', ' + t.posZone : '') : 'Division not reported';
 const hm = (m) => (m >= 60 ? Math.floor(m / 60) + ' h ' : '') + (m % 60) + ' min';
-const trainLine = (t) => `<div><b>${t.no}</b> <span class="m">starts ${dlabel(t.start)} · ${esc(t.rly)}</span><br>${t.pos ? (EVENT[t.event] ? 'Now ' + EVENT[t.event] + ' ' : 'Now at ') + esc(nm(t.pos)) + ', ' : ''}running delay: ${t.delay == null ? 'not known' : t.delay <= 0 ? 'on time' : hm(t.delay)}${t.resch ? ` <span class="m">(rescheduled ${hm(t.resch)}; ${hm(t.totalDelay ?? 0)} behind original timing)</span>` : ''}${t.exc ? ' · ' + esc(t.exc.replace(/[\[\]]/g, '')) : ''}</div>`;
+const trainLine = (t) => `<div><b>${t.no}</b> <span class="m">starts ${dlabel(t.start)} · ${esc(t.rly)}</span><br>${t.pos ? (EVENT[t.event] ? 'Now ' + EVENT[t.event] + ' ' : 'Now at ') + esc(nm(t.pos)) + ' <b>(' + esc(divText(t)) + ')</b>, ' : ''}running delay: ${t.delay == null ? 'not known' : t.delay <= 0 ? 'on time' : hm(t.delay)}${t.resch ? ` <span class="m">(rescheduled ${hm(t.resch)}; ${hm(t.totalDelay ?? 0)} behind original timing)</span>` : ''}${t.exc ? ' · ' + esc(t.exc.replace(/[\[\]]/g, '')) : ''}</div>`;
 
 /* ---------- drawing ---------- */
 function render() {
@@ -451,6 +453,7 @@ const COLS = [
   {key: 'src', label: 'From', fmt: (t) => nm(t.src)}, {key: 'dst', label: 'To', fmt: (t) => nm(t.dst)},
   {key: 'dir', label: 'Direction', fmt: (t) => DIRTXT[t.dir]},
   {key: 'pos', label: 'Now', fmt: (t) => t.pos ? (EVENT[t.event] ? EVENT[t.event][0].toUpperCase() + EVENT[t.event].slice(1) + ' ' : '') + nm(t.pos) : '—'},
+  {key: 'posDiv', label: 'Division (now)', fmt: (t) => t.posDiv ? t.posDiv + (t.posZone ? ' / ' + t.posZone : '') : '—'},
   {key: 'delay', label: 'Running delay', num: true},
   {key: 'resch', label: 'Rescheduled by', fmt: (t) => t.resch ? hm(t.resch) : ''},
   {key: 'sta', label: 'Sched. arrival', fmt: (t) => dtShort(t.sta)},
